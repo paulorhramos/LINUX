@@ -1,0 +1,95 @@
+# Jenkins Plugins List
+# ===================
+# Lista de plugins essenciais para Jenkins CI/CD
+
+# Plugins de administração
+ant:latest
+build-timeout:latest
+credentials-binding:latest
+timestamper:latest
+ws-cleanup:latest
+gradle:latest
+
+# Plugins de SCM
+git:latest
+github:latest
+github-branch-source:latest
+bitbucket:latest
+gitlab-plugin:latest
+
+# Plugins de pipeline
+workflow-aggregator:latest
+pipeline-stage-view:latest
+pipeline-graph-analysis:latest
+pipeline-milestone-step:latest
+pipeline-build-step:latest
+
+# Plugins Docker
+docker-workflow:latest
+docker-plugin:latest
+docker-build-step:latest
+kubernetes:latest
+
+# Plugins de análise de código
+sonar:latest
+warnings-ng:latest
+checkstyle:latest
+pmd:latest
+findbugs:latest
+
+# Plugins de testes
+junit:latest
+jacoco:latest
+htmlpublisher:latest
+xunit:latest
+performance:latest
+
+# Plugins de notificação
+email-ext:latest
+slack:latest
+telegram-notifications:latest
+discord-notifier:latest
+
+# Plugins de segurança
+matrix-auth:latest
+role-strategy:latest
+authorize-project:latest
+
+# Plugins de utilidades
+build-name-setter:latest
+description-setter:latest
+envinject:latest
+parameterized-trigger:latest
+conditional-buildstep:latest
+
+# Plugins de interface
+blueocean:latest
+dashboard-view:latest
+favorite:latest
+folders:latest
+
+# Plugins de métricas
+metrics:latest
+monitoring:latest
+
+# Plugins de banco de dados
+database:latest
+
+# Plugins específicos para linguagens
+nodejs:latest
+python:latest
+golang:latest
+maven-plugin:latest
+
+# Plugins de deploy
+deploy:latest
+publish-over-ssh:latest
+ansible:latest
+
+# Plugins de backup
+backup:latest
+thinBackup:latest
+
+# Configuration as Code
+configuration-as-code:latest
+configuration-as-code-groovy:latest

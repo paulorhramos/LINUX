@@ -1,0 +1,46 @@
+# Dockerfile para aplicação Node.js
+FROM node:18-alpine
+
+# Informações do container
+LABEL maintainer="Paulo Ramos <paulorhramos@example.com>"
+LABEL description="Container Node.js para desenvolvimento"
+LABEL version="1.0"
+
+# Criar diretório da aplicação
+WORKDIR /usr/src/app
+
+# Instalar dependências do sistema
+RUN apk add --no-cache \
+    git \
+    python3 \
+    make \
+    g++ \
+    bash \
+    curl
+
+# Criar usuário não-root
+RUN addgroup -g 1001 -S nodejs && \
+    adduser -S nodejs -u 1001
+
+# Copiar arquivos de configuração do npm
+COPY package*.json ./
+
+# Instalar dependências da aplicação
+RUN npm ci --only=production && npm cache clean --force
+
+# Copiar código da aplicação
+COPY . .
+
+# Mudar propriedade dos arquivos
+RUN chown -R nodejs:nodejs /usr/src/app
+USER nodejs
+
+# Expor porta da aplicação
+EXPOSE 3000
+
+# Healthcheck
+HEALTHCHECK --interval=30s --timeout=3s --start-period=5s --retries=3 \
+    CMD curl -f http://localhost:3000/health || exit 1
+
+# Comando padrão
+CMD ["npm", "start"]

@@ -1,0 +1,147 @@
+# SonarQube Code Quality Platform
+version: '3.8'
+
+services:
+  # SonarQube Community Edition
+  sonarqube:
+    image: sonarqube:lts-community
+    container_name: sonarqube_server
+    restart: unless-stopped
+    environment:
+      # Configurações básicas
+      - SONAR_ES_BOOTSTRAP_CHECKS_DISABLE=true
+      - SONAR_WEB_HOST=0.0.0.0
+      - SONAR_WEB_PORT=9000
+      - SONAR_WEB_CONTEXT=/
+      
+      # Configurações de banco
+      - SONAR_JDBC_URL=jdbc:postgresql://postgres:5432/sonarqube
+      - SONAR_JDBC_USERNAME=sonarqube
+      - SONAR_JDBC_PASSWORD=sonarqube123
+      
+      # Configurações de performance
+      - SONAR_CE_JAVAOPTS=-Xmx2g -Xms512m -XX:+HeapDumpOnOutOfMemoryError
+      - SONAR_WEB_JAVAOPTS=-Xmx2g -Xms512m -XX:+HeapDumpOnOutOfMemoryError
+      - SONAR_SEARCH_JAVAOPTS=-Xms1g -Xmx1g -XX:MaxDirectMemorySize=256m -XX:+HeapDumpOnOutOfMemoryError
+      
+      # Configurações de segurança
+      - SONAR_SECURITY_REALM=sonar
+      - SONAR_FORCEAUTHENTICATION=false
+      
+    ports:
+      - "9000:9000"
+    volumes:
+      - sonarqube_data:/opt/sonarqube/data
+      - sonarqube_logs:/opt/sonarqube/logs
+      - sonarqube_extensions:/opt/sonarqube/extensions
+      - sonarqube_bundled_plugins:/opt/sonarqube/lib/bundled-plugins
+    networks:
+      - sonarqube-network
+    depends_on:
+      postgres:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD-SHELL", "curl -f http://localhost:9000/api/system/status | grep -q '\"status\":\"UP\"' || exit 1"]
+      interval: 60s
+      timeout: 30s
+      retries: 5
+      start_period: 300s
+    sysctls:
+      - vm.max_map_count=524288
+      - fs.file-max=131072
+    ulimits:
+      nproc: 8192
+      nofile: 131072
+
+  # PostgreSQL Database
+  postgres:
+    image: postgres:15-alpine
+    container_name: sonarqube_postgres
+    restart: unless-stopped
+    environment:
+      - POSTGRES_DB=sonarqube
+      - POSTGRES_USER=sonarqube
+      - POSTGRES_PASSWORD=sonarqube123
+      - POSTGRES_INITDB_ARGS=--encoding=UTF8
+    ports:
+      - "5435:5432"
+    volumes:
+      - postgres_sonarqube_data:/var/lib/postgresql/data
+      - ./sonarqube/postgres/init:/docker-entrypoint-initdb.d:ro
+    networks:
+      - sonarqube-network
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U sonarqube -d sonarqube"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+    command: 
+      - postgres
+      - -c
+      - max_connections=200
+      - -c
+      - shared_buffers=256MB
+      - -c
+      - effective_cache_size=1GB
+
+  # Nginx Proxy (opcional)
+  nginx:
+    image: nginx:alpine
+    container_name: sonarqube_nginx
+    restart: unless-stopped
+    ports:
+      - "80:80"
+      - "443:443"
+    volumes:
+      - ./sonarqube/nginx/nginx.conf:/etc/nginx/nginx.conf:ro
+      - ./sonarqube/nginx/conf.d:/etc/nginx/conf.d:ro
+      - ./sonarqube/nginx/ssl:/etc/nginx/ssl:ro
+    networks:
+      - sonarqube-network
+    depends_on:
+      - sonarqube
+    healthcheck:
+      test: ["CMD", "nginx", "-t"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+    profiles:
+      - proxy
+
+  # SonarQube Scanner CLI (para análises via CLI)
+  sonar-scanner:
+    image: sonarsource/sonar-scanner-cli:latest
+    container_name: sonar_scanner
+    volumes:
+      - sonar_scanner_cache:/opt/sonar-scanner/.sonar/cache
+      - ./projects:/projects:ro
+    networks:
+      - sonarqube-network
+    environment:
+      - SONAR_HOST_URL=http://sonarqube:9000
+      - SONAR_SCANNER_OPTS=-Xmx2g
+    profiles:
+      - scanner
+    depends_on:
+      - sonarqube
+
+volumes:
+  sonarqube_data:
+    driver: local
+  sonarqube_logs:
+    driver: local
+  sonarqube_extensions:
+    driver: local
+  sonarqube_bundled_plugins:
+    driver: local
+  postgres_sonarqube_data:
+    driver: local
+  sonar_scanner_cache:
+    driver: local
+
+networks:
+  sonarqube-network:
+    driver: bridge
+    ipam:
+      config:
+        - subnet: 172.23.0.0/16

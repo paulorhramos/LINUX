@@ -1,0 +1,61 @@
+# Dockerfile para aplicação Python
+FROM python:3.11-alpine
+
+# Informações do container
+LABEL maintainer="Paulo Ramos <paulorhramos@example.com>"
+LABEL description="Container Python para desenvolvimento"
+LABEL version="1.0"
+
+# Variáveis de ambiente
+ENV PYTHONDONTWRITEBYTECODE=1 \
+    PYTHONUNBUFFERED=1 \
+    PIP_NO_CACHE_DIR=1 \
+    PIP_DISABLE_PIP_VERSION_CHECK=1
+
+# Instalar dependências do sistema
+RUN apk add --no-cache \
+    gcc \
+    musl-dev \
+    linux-headers \
+    postgresql-dev \
+    jpeg-dev \
+    zlib-dev \
+    freetype-dev \
+    lcms2-dev \
+    openjpeg-dev \
+    tiff-dev \
+    tk-dev \
+    tcl-dev \
+    git \
+    bash \
+    curl
+
+# Criar diretório da aplicação
+WORKDIR /app
+
+# Criar usuário não-root
+RUN adduser -D -s /bin/bash appuser
+
+# Copiar requirements
+COPY requirements.txt .
+
+# Instalar dependências Python
+RUN pip install --upgrade pip && \
+    pip install -r requirements.txt
+
+# Copiar código da aplicação
+COPY . .
+
+# Mudar propriedade dos arquivos
+RUN chown -R appuser:appuser /app
+USER appuser
+
+# Expor porta da aplicação
+EXPOSE 8000
+
+# Healthcheck
+HEALTHCHECK --interval=30s --timeout=3s --start-period=5s --retries=3 \
+    CMD curl -f http://localhost:8000/health || exit 1
+
+# Comando padrão
+CMD ["python", "manage.py", "runserver", "0.0.0.0:8000"]

@@ -1,0 +1,137 @@
+jenkins:
+  systemMessage: "Jenkins CI/CD Server - Rocky Linux 10"
+  numExecutors: 2
+  mode: NORMAL
+  scmCheckoutRetryCount: 3
+  
+  securityRealm:
+    local:
+      allowsSignup: false
+      users:
+        - id: "admin"
+          password: "admin123"
+          properties:
+            - "hudson.security.FullControlOnceLoggedInAuthorizationStrategy$GlobalMatrixAuthorizationStrategy"
+            - mailer:
+                emailAddress: "admin@localhost"
+
+  authorizationStrategy:
+    globalMatrix:
+      permissions:
+        - "Overall/Administer:admin"
+        - "Overall/Read:authenticated"
+
+  remotingSecurity:
+    enabled: true
+
+  clouds:
+    - docker:
+        name: "docker-cloud"
+        dockerApi:
+          dockerHost:
+            uri: "tcp://docker:2376"
+            credentialsId: ""
+        templates:
+          - labelString: "docker-agent"
+            dockerTemplateBase:
+              image: "jenkins/inbound-agent:latest"
+            remoteFs: "/home/jenkins/agent"
+            connector:
+              attach:
+                user: "jenkins"
+            instanceCapStr: "10"
+            retentionStrategy:
+              idleMinutes: 10
+
+security:
+  globalJobDslSecurityConfiguration:
+    useScriptSecurity: false
+  
+  scriptApproval:
+    approvedSignatures:
+      - "method groovy.json.JsonBuilder toPrettyString"
+      - "new groovy.json.JsonBuilder java.lang.Object"
+      - "staticMethod org.codehaus.groovy.runtime.DefaultGroovyMethods readLines java.io.Reader"
+
+unclassified:
+  location:
+    adminAddress: "admin@localhost"
+    url: "http://localhost:8080"
+    
+  mailer:
+    smtpHost: "localhost"
+    smtpPort: 25
+    charset: "UTF-8"
+    
+  sonarGlobalConfiguration:
+    installations:
+      - name: "SonarQube"
+        serverUrl: "http://sonarqube:9000"
+        credentialsId: ""
+        
+  gitLabConnectionConfig:
+    connections:
+      - name: "Gitea"
+        url: "http://gitea:3000"
+        credentialsId: ""
+        
+  globalLibraries:
+    libraries:
+      - name: "shared-library"
+        defaultVersion: "main"
+        retriever:
+          modernSCM:
+            scm:
+              git:
+                remote: "http://gitea:3000/jenkins/shared-library.git"
+
+tool:
+  git:
+    installations:
+      - name: "Default"
+        home: "/usr/bin/git"
+        
+  maven:
+    installations:
+      - name: "Maven-3.8"
+        home: "/usr/share/maven"
+        
+  jdk:
+    installations:
+      - name: "OpenJDK-17"
+        home: "/opt/java/openjdk"
+        
+  nodejs:
+    installations:
+      - name: "NodeJS-18"
+        home: "/usr/local/nodejs"
+        
+  python:
+    installations:
+      - name: "Python-3"
+        home: "/usr/bin/python3"
+
+jobs:
+  - script: |
+      folder('Pipeline-Examples') {
+          description('Exemplos de pipelines')
+      }
+      
+      pipelineJob('Pipeline-Examples/Hello-World') {
+          definition {
+              cps {
+                  script('''
+                      pipeline {
+                          agent any
+                          stages {
+                              stage('Hello') {
+                                  steps {
+                                      echo 'Hello World - Jenkins funcionando!'
+                                  }
+                              }
+                          }
+                      }
+                  ''')
+              }
+          }
+      }

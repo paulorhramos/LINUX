@@ -1,0 +1,46 @@
+# Ambiente de desenvolvimento web completo
+version: '3.8'
+
+services:
+  # Nginx + PHP + MySQL (LEMP Stack)
+  nginx-php:
+    image: nginx:alpine
+    container_name: lemp_nginx
+    ports:
+      - "8082:80"
+    volumes:
+      - ./development/php/app:/var/www/html
+      - ./services/nginx/php.conf:/etc/nginx/conf.d/default.conf
+    depends_on:
+      - php-fpm
+      - mysql-lemp
+    networks:
+      - lemp-network
+
+  php-fpm:
+    image: php:8.2-fpm
+    container_name: lemp_php
+    volumes:
+      - ./development/php/app:/var/www/html
+    networks:
+      - lemp-network
+
+  mysql-lemp:
+    image: mysql:8.0
+    container_name: lemp_mysql
+    environment:
+      MYSQL_ROOT_PASSWORD: lemp123
+      MYSQL_DATABASE: lemp_db
+      MYSQL_USER: lemp_user
+      MYSQL_PASSWORD: lemp_pass
+    volumes:
+      - mysql_lemp_data:/var/lib/mysql
+    networks:
+      - lemp-network
+
+volumes:
+  mysql_lemp_data:
+
+networks:
+  lemp-network:
+    driver: bridge

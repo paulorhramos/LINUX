@@ -1,0 +1,249 @@
+# Jenkins CI/CD Stack para Rocky Linux 10
+version: '3.8'
+
+services:
+  # Jenkins Master
+  jenkins:
+    image: jenkins/jenkins:lts-jdk17
+    container_name: jenkins_master
+    restart: unless-stopped
+    user: root
+    privileged: true
+    environment:
+      - JENKINS_OPTS=--httpPort=8080
+      - JAVA_OPTS=-Djenkins.install.runSetupWizard=false -Xmx2g -Xms1g
+      - JENKINS_UC_DOWNLOAD=https://updates.jenkins.io
+    ports:
+      - "8080:8080"
+      - "50000:50000"
+    volumes:
+      - jenkins_home:/var/jenkins_home
+      - jenkins_docker_certs:/certs/client:ro
+      - /var/run/docker.sock:/var/run/docker.sock
+      - ./jenkins/init.groovy.d:/var/jenkins_home/init.groovy.d:ro
+      - ./jenkins/plugins.txt:/usr/share/jenkins/ref/plugins.txt:ro
+      - ./jenkins/casc.yaml:/var/jenkins_home/casc_configs/jenkins.yaml:ro
+      - /usr/bin/docker:/usr/bin/docker:ro
+    networks:
+      - jenkins-network
+      - dev-network
+    healthcheck:
+      test: ["CMD-SHELL", "curl -f http://localhost:8080/login || exit 1"]
+      interval: 60s
+      timeout: 10s
+      retries: 3
+      start_period: 120s
+    depends_on:
+      - docker-dind
+
+  # Docker in Docker para builds
+  docker-dind:
+    image: docker:24-dind
+    container_name: jenkins_docker
+    restart: unless-stopped
+    privileged: true
+    environment:
+      - DOCKER_TLS_CERTDIR=/certs
+    volumes:
+      - jenkins_docker_certs:/certs/client
+      - jenkins_home:/var/jenkins_home
+    ports:
+      - "2376:2376"
+    networks:
+      jenkins-network:
+        aliases:
+          - docker
+    command: --storage-driver overlay2
+
+  # Sonarqube para análise de código
+  sonarqube:
+    image: sonarqube:lts-community
+    container_name: jenkins_sonarqube
+    restart: unless-stopped
+    environment:
+      - SONAR_ES_BOOTSTRAP_CHECKS_DISABLE=true
+      - SONAR_JDBC_URL=jdbc:postgresql://postgres:5432/sonarqube
+      - SONAR_JDBC_USERNAME=sonarqube
+      - SONAR_JDBC_PASSWORD=sonarqube123
+    ports:
+      - "9000:9000"
+    volumes:
+      - sonarqube_data:/opt/sonarqube/data
+      - sonarqube_logs:/opt/sonarqube/logs
+      - sonarqube_extensions:/opt/sonarqube/extensions
+    networks:
+      - jenkins-network
+    depends_on:
+      - postgres
+    healthcheck:
+      test: ["CMD-SHELL", "curl -f http://localhost:9000/api/system/status || exit 1"]
+      interval: 60s
+      timeout: 30s
+      retries: 3
+
+  # PostgreSQL para SonarQube
+  postgres:
+    image: postgres:15-alpine
+    container_name: jenkins_postgres
+    restart: unless-stopped
+    environment:
+      - POSTGRES_DB=sonarqube
+      - POSTGRES_USER=sonarqube
+      - POSTGRES_PASSWORD=sonarqube123
+    ports:
+      - "5433:5432"
+    volumes:
+      - postgres_sonar_data:/var/lib/postgresql/data
+      - ./jenkins/postgres/init:/docker-entrypoint-initdb.d
+    networks:
+      - jenkins-network
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U sonarqube -d sonarqube"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+
+  # Nexus Repository Manager
+  nexus:
+    image: sonatype/nexus3:latest
+    container_name: jenkins_nexus
+    restart: unless-stopped
+    ports:
+      - "8081:8081"
+      - "8085:8085"
+    volumes:
+      - nexus_data:/nexus-data
+    networks:
+      - jenkins-network
+    environment:
+      - NEXUS_SECURITY_RANDOMPASSWORD=false
+    healthcheck:
+      test: ["CMD-SHELL", "curl -f http://localhost:8081/service/rest/v1/status || exit 1"]
+      interval: 60s
+      timeout: 30s
+      retries: 5
+      start_period: 180s
+
+  # Gitea - Git server local
+  gitea:
+    image: gitea/gitea:latest
+    container_name: jenkins_gitea
+    restart: unless-stopped
+    environment:
+      - USER_UID=1000
+      - USER_GID=1000
+      - GITEA__database__DB_TYPE=postgres
+      - GITEA__database__HOST=postgres:5432
+      - GITEA__database__NAME=gitea
+      - GITEA__database__USER=gitea
+      - GITEA__database__PASSWD=gitea123
+    ports:
+      - "3000:3000"
+      - "2222:22"
+    volumes:
+      - gitea_data:/data
+      - /etc/timezone:/etc/timezone:ro
+      - /etc/localtime:/etc/localtime:ro
+    networks:
+      - jenkins-network
+    depends_on:
+      - postgres
+    healthcheck:
+      test: ["CMD-SHELL", "curl -f http://localhost:3000/api/v1/version || exit 1"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+
+  # Redis para cache
+  redis:
+    image: redis:7-alpine
+    container_name: jenkins_redis
+    restart: unless-stopped
+    ports:
+      - "6380:6379"
+    volumes:
+      - redis_jenkins_data:/data
+      - ./jenkins/redis/redis.conf:/usr/local/etc/redis/redis.conf
+    command: redis-server /usr/local/etc/redis/redis.conf
+    networks:
+      - jenkins-network
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+
+  # Nginx Reverse Proxy
+  nginx:
+    image: nginx:alpine
+    container_name: jenkins_nginx
+    restart: unless-stopped
+    ports:
+      - "80:80"
+      - "443:443"
+    volumes:
+      - ./jenkins/nginx/nginx.conf:/etc/nginx/nginx.conf:ro
+      - ./jenkins/nginx/conf.d:/etc/nginx/conf.d:ro
+      - ./jenkins/nginx/ssl:/etc/nginx/ssl:ro
+    networks:
+      - jenkins-network
+    depends_on:
+      - jenkins
+      - sonarqube
+      - nexus
+      - gitea
+    healthcheck:
+      test: ["CMD", "nginx", "-t"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+
+  # Agent Jenkins (opcional)
+  jenkins-agent:
+    image: jenkins/inbound-agent:latest
+    container_name: jenkins_agent_1
+    restart: unless-stopped
+    environment:
+      - JENKINS_URL=http://jenkins:8080
+      - JENKINS_AGENT_NAME=agent-1
+      - JENKINS_AGENT_WORKDIR=/home/jenkins/agent
+    volumes:
+      - jenkins_agent_workspace:/home/jenkins/agent
+      - /var/run/docker.sock:/var/run/docker.sock
+    networks:
+      - jenkins-network
+    depends_on:
+      - jenkins
+    profiles:
+      - agents
+
+volumes:
+  jenkins_home:
+    driver: local
+  jenkins_docker_certs:
+    driver: local
+  jenkins_agent_workspace:
+    driver: local
+  sonarqube_data:
+    driver: local
+  sonarqube_logs:
+    driver: local
+  sonarqube_extensions:
+    driver: local
+  postgres_sonar_data:
+    driver: local
+  nexus_data:
+    driver: local
+  gitea_data:
+    driver: local
+  redis_jenkins_data:
+    driver: local
+
+networks:
+  jenkins-network:
+    driver: bridge
+    ipam:
+      config:
+        - subnet: 172.21.0.0/16
+  dev-network:
+    external: true
